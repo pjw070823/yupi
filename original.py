@@ -260,6 +260,8 @@ async def yupiya(interaction, text: str):
         if len(text) > 500:
             await interaction.response.send_message('메시지가 너무 길어요...')
         else:
+            await interaction.response.send_message('잠시 기다려주세요')
+
             created_at = interaction.created_at.strftime("%Y-%m-%d %H:%M:%S")
             save_chat_message(interaction.user.id, "user", text, created_at)
             rows = load_recent_history(interaction.user.id)
@@ -286,7 +288,7 @@ async def yupiya(interaction, text: str):
             except Exception as exc:
                 await interaction.response.send_message(f"Gemini API 오류: {exc}")
                 return
-            await interaction.response.send_message(respond)
+            await interaction.edit_original_response(respond)
             save_chat_message(interaction.user.id, "bot", respond, created_at)
 
 
