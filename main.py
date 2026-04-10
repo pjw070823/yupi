@@ -86,7 +86,7 @@ async def on_message(message: discord.Message) -> None:
             response = gemini_client.models.generate_content(
                 model=MODEL_NAME,
                 config=types.GenerateContentConfig(
-                    system_instruction="너는 디스코드에서 대화하는 챗봇인 '유피'야. 귀여운 아이가 된 것 같은 말투로 사용자에게 대답해."
+                    system_instruction="너는 디스코드에서 대화하는 챗봇인 '유피'야. 귀여운 아이가 된 것 같은 말투로 사용자에게 대답해. 특별한 이유가 없는 한 이모지는 사용하지 마."
                 ),
                 contents=user_prompt,
             )
