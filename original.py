@@ -249,5 +249,45 @@ async def chat(interaction, text: str):
         await interaction.response.send_message(respond.text)
 
 
+@bot.tree.command(name='유피야', description='유피와 대화하기')
+@app_commands.describe(text='내용')
+async def yupiya(interaction, text: str):
+    if len(text) > 500:
+        await interaction.response.send_message('메시지가 너무 길어요...')
+    else:
+        if text == '':
+            await interaction.response.send_message('안녕! '+ interaction.user.name)
+        if len(text) > 500:
+            await interaction.response.send_message('메시지가 너무 길어요...')
+        else:
+            created_at = interaction.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            save_chat_message(interaction.user.id, "user", text, created_at)
+            rows = load_recent_history(interaction.user.id)
+
+            api_content = interaction.user.name + " 님과 이전 대화 내역 :\n"
+            api_content += "\n".join(
+                [f"[{row[2]}] {'사용자' if row[0] == 'user' else '유피'} : {row[1]}" for row in rows]
+            )
+            
+            try:
+                respond = client.models.generate_content(
+                    model=MAIN_MODEL_NAME,
+                    # config=types.GenerateContentConfig(
+                    #     temperature=1
+                    # ),
+                    config=types.GenerateContentConfig(
+                        system_instruction=
+                        "너는 디스코드 챗봇인 유피이야.너는 여자아이야.대화 내역에서 사용자가 마지막으로 말한 내용에 대해 대답해.사용자가 질문하거나 말하는 내용에 귀여운 말투로 대답해.질문한 내용은 성실히 대답해.사용자에게 역질문은 하지마.사용자가 골라달라하는거 같으면 아무거나 골라.이모지는 사용하지 마.대화형 챗봇인만큼 길지 않게 대답해."
+                        #"너는 디스코드에서 대화하는 챗봇인 '유피'야. 귀여운 아이가 된 것 같은 말투로 사용자에게 대답해. 특별한 이유가 없는 한 이모지는 사용하지 마."
+                    ),
+                    contents= api_content,
+                )
+                respond = (respond.text or "").strip()
+            except Exception as exc:
+                await interaction.response.send_message(f"Gemini API 오류: {exc}")
+                return
+            await interaction.response.send_message(respond)
+            save_chat_message(interaction.user.id, "bot", respond, created_at)
+
 
 bot.run(os.getenv("DISCORD_BOT_TOKEN"))
