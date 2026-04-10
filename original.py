@@ -286,9 +286,9 @@ async def yupiya(interaction, text: str):
                 )
                 respond = (respond.text or "").strip()
             except Exception as exc:
-                await interaction.response.send_message(f"Gemini API 오류: {exc}")
+                await interaction.edit_original_response(content=f"Gemini API 오류: {exc}")
                 return
-            await interaction.edit_original_response(respond)
+            await interaction.edit_original_response(content=respond)
             save_chat_message(interaction.user.id, "bot", respond, created_at)
 
 
