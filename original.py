@@ -155,7 +155,7 @@ async def on_message(msg):
         text = msg.content[3:].strip()
         if text == '':
             await msg.channel.send('안녕! '+msg.author.name)
-        if len(text) > 500:
+        elif len(text) > 500:
             await msg.channel.send('메시지가 너무 길어요...')
         else:
             created_at = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
@@ -180,6 +180,29 @@ async def on_message(msg):
                             #"너는 디스코드에서 대화하는 챗봇인 '유피'야. 귀여운 아이가 된 것 같은 말투로 사용자에게 대답해. 특별한 이유가 없는 한 이모지는 사용하지 마."
                         ),
                         contents= api_content,
+                    )
+                    respond = (respond.text or "").strip()
+                except Exception as exc:
+                    await msg.channel.send(f"Gemini API 오류: {exc}")
+                    return
+            await msg.channel.send(respond)
+            save_chat_message(msg.author.id, "bot", respond, created_at)
+        
+    elif msg.content.startswith('멍청한 유피야'):
+        text = msg.content[6:].strip()
+        if text == '':
+            await msg.channel.send('안녕! '+msg.author.name)
+        elif len(text) > 500:
+            await msg.channel.send('메시지가 너무 길어요...')
+        else:            
+            async with msg.channel.typing():
+                try:
+                    respond = client.models.generate_content(
+                        model="gemma-3-4b-it",
+                        # config=types.GenerateContentConfig(
+                        #     temperature=1
+                        # ),
+                        contents= "너는 디스코드 챗봇인 유피이야.너는 여자아이야.사용자가 질문하거나 말하는 내용에 귀여운 말투로 대답해.질문한 내용은 성실히 대답해.사용자에게 역질문은 하지마.사용자가 골라달라하는거 같으면 아무거나 골라.이모지는 사용하지 마.대화형 챗봇인만큼 길지 않게 대답해. 다음 줄부터가 사용자의 입력이야.\n"+text,
                     )
                     respond = (respond.text or "").strip()
                 except Exception as exc:
@@ -222,8 +245,8 @@ async def on_message(msg):
 async def 기출(interaction, subject: str):
     rlcnf_num = ''
     if subject == '수1': rlcnf_num = random.choice(math1)
-    if subject == '수2': rlcnf_num = random.choice(math2)
-    if subject == '미적': rlcnf_num = random.choice(calculus)
+    elif subject == '수2': rlcnf_num = random.choice(math2)
+    elif subject == '미적': rlcnf_num = random.choice(calculus)
     else: rlcnf_num = subject
     
     qNum = rlcnf_num
