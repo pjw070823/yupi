@@ -26,38 +26,6 @@ calculus = ['22예시27미', '22예시28미', '22예시29미', '22예시30미', 
 
 equationComponents = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '+', '-', '*', '/', '^' '(', ')', '&', '|', '!', '>', '<', '=']
 
-def split_message(text: str, limit: int = DISCORD_MESSAGE_LIMIT) -> list[str]:
-    if len(text) <= limit:
-        return [text]
-
-    chunks: list[str] = []
-    current = []
-    current_length = 0
-
-    for line in text.splitlines(keepends=True):
-        if len(line) > limit:
-            if current:
-                chunks.append("".join(current))
-                current = []
-                current_length = 0
-
-            for i in range(0, len(line), limit):
-                chunks.append(line[i : i + limit])
-            continue
-
-        if current_length + len(line) > limit:
-            chunks.append("".join(current))
-            current = [line]
-            current_length = len(line)
-        else:
-            current.append(line)
-            current_length += len(line)
-
-    if current:
-        chunks.append("".join(current))
-
-    return chunks
-
 
 def consistsOfEquation(text: str) -> bool:
     for c in str:
@@ -217,9 +185,7 @@ async def on_message(msg):
                 except Exception as exc:
                     await msg.channel.send(f"Gemini API 오류: {exc}")
                     return
-            for chunk in split_message(respond):
-                await msg.channel.send(chunk)
-            # await msg.channel.send(respond)
+            await msg.channel.send(respond)
             save_chat_message(msg.author.id, "bot", respond, created_at)
 
 
