@@ -209,7 +209,7 @@ async def on_message(msg):
 
 
     elif consistsOfEquation(msg.content):
-        equation = msg.content.relace('=', '==').replace('!=', 'neq').replace('!', ' not ').replace('neq', '!=').replace('^', '**')
+        equation = msg.content.replace('=', '==').replace('!=', 'neq').replace('!', ' not ').replace('neq', '!=').replace('^', '**')
         try:
             resultOfEquation = eval(equation)
             await msg.channel.send(resultOfEquation)
