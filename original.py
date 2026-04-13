@@ -28,7 +28,7 @@ equationComponents = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '+', '-'
 
 
 def consistsOfEquation(text: str) -> bool:
-    for c in str:
+    for c in text:
         if c not in equationComponents:
             return False
     return True
