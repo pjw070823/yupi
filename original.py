@@ -89,7 +89,7 @@ def save_chat_message(user_id: int, role: str, message: str, created_at: str):
     connection.commit()
 
 
-def load_recent_history(user_id: int, limit: int = 10):
+def load_recent_history(user_id: int, limit: int = 21):
     cursor.execute(
         """
         SELECT role, message, created_at
@@ -232,7 +232,7 @@ async def on_message(msg):
 
 
     elif consistsOfEquation(msg.content):
-        equation = msg.content.replace('!=', 'neq').replace('!', 'not ').replace('neq', '!=').replace('^', '**')
+        equation = msg.content.replace('!=', 'neq').replace('!', ' not ').replace('neq', '!=').replace('^', '**').replace('&&', ' and ').replace('||', ' or ')
         try:
             resultOfEquation = eval(equation)
             if equation.strip() != str(resultOfEquation):
