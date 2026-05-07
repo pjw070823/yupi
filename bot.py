@@ -13,6 +13,7 @@ import sqlite3
 load_dotenv()
 
 MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash" or "google/gemma-2-27b-it"
+VISION_MODEL_NAME = "google/gemini-2.5-flash-lite"
 DISCORD_MESSAGE_LIMIT = 2000
 
 bot = commands.Bot(command_prefix='/', intents=Intents.all())
@@ -174,7 +175,7 @@ async def on_message(msg):
                 text if text else "[이미지 첨부]",
                 created_at
             )
-            rows = load_recent_history(msg.author.id)
+            rows = load_recent_history(msg.author.id, limit=2*5+1)
 
             api_content = msg.author.name + " 님과 이전 대화 내역 :\n"
             api_content += "\n".join(
@@ -231,7 +232,7 @@ async def on_message(msg):
             async with msg.channel.typing():
                 try:
                     response = await client.chat.completions.create(
-                        model=MAIN_MODEL_NAME,
+                        model=VISION_MODEL_NAME if image_parts else MAIN_MODEL_NAME,
                         messages=[
                             {"role": "system", "content": system_instruction},
                             {"role": "user", "content": user_content}
