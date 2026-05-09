@@ -1,2 +1,4 @@
 .env
-원본코드.py
+main.py
+original.py
+chattings.db
