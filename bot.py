@@ -12,7 +12,7 @@ import sqlite3
 
 load_dotenv()
 
-MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash:online" or "google/gemma-2-27b-it:online"
+MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash" or "google/gemma-2-27b-it"
 VISION_MODEL_NAME = "google/gemini-2.5-flash-lite:online"
 DISCORD_MESSAGE_LIMIT = 2000
 
@@ -93,7 +93,7 @@ def save_chat_message(user_id: int, role: str, message: str, created_at: str):
     connection.commit()
 
 
-def load_recent_history(user_id: int, limit: int = 21):
+def load_recent_history(user_id: int, limit: int = 2*10+1):
     cursor.execute(
         """
         SELECT role, message, created_at
@@ -167,6 +167,7 @@ async def on_message(msg):
             await msg.channel.send('안녕! ' + msg.author.name)
         elif len(text) > 500:
             await msg.channel.send('메시지가 너무 길어요...')
+        
         else:
             created_at = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
             save_chat_message(
@@ -176,6 +177,7 @@ async def on_message(msg):
                 created_at
             )
             rows = load_recent_history(msg.author.id, limit=2*5+1)
+            rows.pop()
 
             api_content = msg.author.name + " 님과 이전 대화 내역 :\n"
             api_content += "\n".join(
@@ -198,17 +200,18 @@ async def on_message(msg):
             elif image_parts:
                 prompt_text += "\n\n사용자의 이번 메시지 : [이미지 첨부만 있음]"
 
+            system_instruction = (
+                "너는 디스코드 챗봇인 유피이야.너는 여자아이야."
+                "대화 내역과 사용자가 첨부한 이미지를 함께 보고, 사용자가 마지막으로 보낸 내용에 대해 대답해."
+                "사용자가 질문하거나 말하는 내용에 귀여운 말투로 대답해."
+                "질문한 내용은 성실히 대답해."
+                "사용자에게 역질문은 하지마."
+                "사용자가 골라달라하는거 같으면 아무거나 골라."
+                "이모지는 사용하지 마."
+                "대화형 챗봇인만큼 길지 않게 대답해."
+            )
+
             if image_parts:
-                system_instruction = (
-                    "너는 디스코드 챗봇인 유피이야.너는 여자아이야."
-                    "대화 내역과 사용자가 첨부한 이미지를 함께 보고, 사용자가 마지막으로 보낸 내용에 대해 대답해."
-                    "사용자가 질문하거나 말하는 내용에 귀여운 말투로 대답해."
-                    "질문한 내용은 성실히 대답해."
-                    "사용자에게 역질문은 하지마."
-                    "사용자가 골라달라하는거 같으면 아무거나 골라."
-                    "이모지는 사용하지 마."
-                    "대화형 챗봇인만큼 길지 않게 대답해."
-                )
                 user_content = [
                     {"type": "text", "text": prompt_text},
                     *[{
@@ -217,17 +220,18 @@ async def on_message(msg):
                     } for ct, ib in image_parts]
                 ]
             else:
-                system_instruction = (
-                    "너는 디스코드 챗봇인 유피이야.너는 여자아이야."
-                    "대화 내역에서 사용자가 마지막으로 말한 내용에 대해 대답해."
-                    "사용자가 질문하거나 말하는 내용에 귀여운 말투로 대답해."
-                    "질문한 내용은 성실히 대답해."
-                    "사용자에게 역질문은 하지마."
-                    "사용자가 골라달라하는거 같으면 아무거나 골라."
-                    "이모지는 사용하지 마."
-                    "대화형 챗봇인만큼 길지 않게 대답해."
-                )
                 user_content = prompt_text
+
+            plugin = []
+
+            if '검색' in text or 'search' in text:
+                plugin += [
+                    {
+                        "id": "web",
+                        "engine": "exa",
+                        "max_results": 5
+                    }
+                ]
 
             async with msg.channel.typing():
                 try:
@@ -236,7 +240,8 @@ async def on_message(msg):
                         messages=[
                             {"role": "system", "content": system_instruction},
                             {"role": "user", "content": user_content}
-                        ]
+                        ],
+                        plugins=plugin,
                     )
                     respond = (response.choices[0].message.content or "").strip()
                 except Exception as exc:
