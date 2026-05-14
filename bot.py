@@ -1,7 +1,7 @@
 from discord import app_commands
 from discord.ext import commands
 from discord import Intents
-from openai import AsyncOpenAI
+from openrouter import OpenRouter
 from math import *
 import base64
 import random
@@ -17,10 +17,7 @@ VISION_MODEL_NAME = "google/gemini-2.5-flash-lite:online"
 DISCORD_MESSAGE_LIMIT = 2000
 
 bot = commands.Bot(command_prefix='/', intents=Intents.all())
-client = AsyncOpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-)
+client = OpenRouter(api_key=os.getenv("OPENROUTER_API_KEY"))
 connection = sqlite3.connect('chattings.db')
 cursor = connection.cursor()
 
@@ -228,14 +225,14 @@ async def on_message(msg):
                 plugin += [
                     {
                         "id": "web",
-                        "engine": "exa",
-                        "max_results": 5
+                        "engine": "parallel",
+                        "max_results": 10
                     }
                 ]
 
             async with msg.channel.typing():
                 try:
-                    response = await client.chat.completions.create(
+                    response = await client.chat.send_async(
                         model=VISION_MODEL_NAME if image_parts else MAIN_MODEL_NAME,
                         messages=[
                             {"role": "system", "content": system_instruction},
@@ -261,7 +258,7 @@ async def on_message(msg):
             created_at = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
             async with msg.channel.typing():
                 try:
-                    response = await client.chat.completions.create(
+                    response = await client.chat.send_async(
                         model="google/gemma-2-9b-it",
                         messages=[
                             {"role": "user", "content": "너는 디스코드 챗봇인 유피이야.너는 여자아이야.사용자가 질문하거나 말하는 내용에 귀여운 말투로 대답해.질문한 내용은 성실히 대답해.사용자에게 역질문은 하지마.사용자가 골라달라하는거 같으면 아무거나 골라.이모지는 사용하지 마.대화형 챗봇인만큼 길지 않게 대답해. 다음 줄부터가 사용자의 입력이야.\n" + text}
@@ -280,7 +277,7 @@ async def on_message(msg):
             await msg.channel.send('메시지가 너무 길어요...')
         else:
             try:
-                response = await client.chat.completions.create(
+                response = await client.chat.send_async(
                     model="google/gemini-2.5-pro",
                     temperature=1,
                     messages=[
@@ -351,7 +348,7 @@ async def chat(interaction, text: str):
     if len(text) > 500:
         await interaction.response.send_message('메시지가 너무 길어요...')
     else:
-        response = await client.chat.completions.create(
+        response = await client.chat.send_async(
             model=MAIN_MODEL_NAME,
             temperature=2,
             messages=[
@@ -384,7 +381,7 @@ async def yupiya(interaction, text: str):
             )
 
             try:
-                response = await client.chat.completions.create(
+                response = await client.chat.send_async(
                     model=MAIN_MODEL_NAME,
                     messages=[
                         {"role": "system", "content": "너는 디스코드 챗봇인 유피이야.너는 여자아이야.대화 내역에서 사용자가 마지막으로 말한 내용에 대해 대답해.사용자가 질문하거나 말하는 내용에 귀여운 말투로 대답해.질문한 내용은 성실히 대답해.사용자에게 역질문은 하지마.사용자가 골라달라하는거 같으면 아무거나 골라.이모지는 사용하지 마.대화형 챗봇인만큼 길지 않게 대답해."},
