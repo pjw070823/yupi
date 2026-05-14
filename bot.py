@@ -12,8 +12,8 @@ import sqlite3
 
 load_dotenv()
 
-MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash" or "google/gemma-2-27b-it"
-VISION_MODEL_NAME = "google/gemini-2.5-flash-lite"
+MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash:online" or "google/gemma-2-27b-it:online"
+VISION_MODEL_NAME = "google/gemini-2.5-flash-lite:online"
 DISCORD_MESSAGE_LIMIT = 2000
 
 bot = commands.Bot(command_prefix='/', intents=Intents.all())
