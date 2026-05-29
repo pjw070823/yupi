@@ -27,6 +27,120 @@ calculus = ['22예시27미', '22예시28미', '22예시29미', '22예시30미', 
 
 equationComponents = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '+', '-', '*', '/', '^', '(', ')', '&', '|', '!', '>', '<', '=', '%', '.', ' ']
 
+CHOSEONG = [
+    'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ',
+    'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ',
+]
+JUNGSEONG = [
+    'ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ',
+    'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ',
+]
+JONGSEONG = [
+    '', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ',
+    'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ',
+    'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ',
+]
+COMBINED_JUNGSEONG = {
+    ('ㅗ', 'ㅏ'): 'ㅘ',
+    ('ㅗ', 'ㅐ'): 'ㅙ',
+    ('ㅗ', 'ㅣ'): 'ㅚ',
+    ('ㅜ', 'ㅓ'): 'ㅝ',
+    ('ㅜ', 'ㅔ'): 'ㅞ',
+    ('ㅜ', 'ㅣ'): 'ㅟ',
+    ('ㅡ', 'ㅣ'): 'ㅢ',
+}
+COMBINED_JONGSEONG = {
+    ('ㄱ', 'ㅅ'): 'ㄳ',
+    ('ㄴ', 'ㅈ'): 'ㄵ',
+    ('ㄴ', 'ㅎ'): 'ㄶ',
+    ('ㄹ', 'ㄱ'): 'ㄺ',
+    ('ㄹ', 'ㅁ'): 'ㄻ',
+    ('ㄹ', 'ㅂ'): 'ㄼ',
+    ('ㄹ', 'ㅅ'): 'ㄽ',
+    ('ㄹ', 'ㅌ'): 'ㄾ',
+    ('ㄹ', 'ㅍ'): 'ㄿ',
+    ('ㄹ', 'ㅎ'): 'ㅀ',
+    ('ㅂ', 'ㅅ'): 'ㅄ',
+}
+CHOSEONG_INDEX = {letter: index for index, letter in enumerate(CHOSEONG)}
+JUNGSEONG_INDEX = {letter: index for index, letter in enumerate(JUNGSEONG)}
+JONGSEONG_INDEX = {letter: index for index, letter in enumerate(JONGSEONG)}
+
+
+def combine_hangul_jamo(text: str) -> str:
+    result = []
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char not in CHOSEONG_INDEX or i + 1 >= len(text) or text[i + 1] not in JUNGSEONG_INDEX:
+            result.append(char)
+            i += 1
+            continue
+
+        choseong = char
+        jungseong = text[i + 1]
+        i += 2
+
+        if i < len(text) and (jungseong, text[i]) in COMBINED_JUNGSEONG:
+            jungseong = COMBINED_JUNGSEONG[(jungseong, text[i])]
+            i += 1
+
+        jongseong = ''
+        if i < len(text) and text[i] in JONGSEONG_INDEX:
+            first_jongseong = text[i]
+            next_is_vowel = i + 1 < len(text) and text[i + 1] in JUNGSEONG_INDEX
+            combined_jongseong = ''
+
+            if i + 1 < len(text):
+                combined_jongseong = COMBINED_JONGSEONG.get((first_jongseong, text[i + 1]), '')
+
+            if combined_jongseong:
+                has_next_syllable = (
+                    i + 2 < len(text)
+                    and text[i + 2] in CHOSEONG_INDEX
+                    and i + 3 < len(text)
+                    and text[i + 3] in JUNGSEONG_INDEX
+                )
+                if not next_is_vowel and (i + 2 >= len(text) or has_next_syllable):
+                    jongseong = combined_jongseong
+                    i += 2
+                elif not next_is_vowel:
+                    jongseong = first_jongseong
+                    i += 1
+            elif not next_is_vowel:
+                jongseong = first_jongseong
+                i += 1
+
+        syllable_code = (
+            0xAC00
+            + CHOSEONG_INDEX[choseong] * 21 * 28
+            + JUNGSEONG_INDEX[jungseong] * 28
+            + JONGSEONG_INDEX[jongseong]
+        )
+        result.append(chr(syllable_code))
+
+    return ''.join(result)
+
+def eng_to_hangul(text: str) -> str:
+    eng2hangul = {
+        'q': 'ㅂ', 'w': 'ㅈ', 'e': 'ㄷ', 'r': 'ㄱ', 't': 'ㅅ',
+        'y': 'ㅛ', 'u': 'ㅕ', 'i': 'ㅑ', 'o': 'ㅐ', 'p': 'ㅔ',
+        'a': 'ㅁ', 's': 'ㄴ', 'd': 'ㅇ', 'f': 'ㄹ', 'g': 'ㅎ',
+        'h': 'ㅗ', 'j': 'ㅓ', 'k': 'ㅏ', 'l': 'ㅣ',
+        'z': 'ㅋ', 'x': 'ㅌ', 'c': 'ㅊ', 'v': 'ㅍ',
+        'b': 'ㅠ', 'n': 'ㅜ', 'm': 'ㅡ',
+        'Q': 'ㅃ', 'W': 'ㅉ', 'E': 'ㄸ', 'R': 'ㄲ', 'T': 'ㅆ',
+        'Y': 'ㅛ', 'U': 'ㅕ', 'I': 'ㅑ', 'O': 'ㅒ', 'P': 'ㅖ',
+        'A': 'ㅁ', 'S': 'ㄴ', 'D': 'ㅇ', 'F': 'ㄹ', 'G': 'ㅎ',
+        'H': 'ㅗ', 'J': 'ㅓ', 'K': 'ㅏ', 'L': 'ㅣ',
+        'Z': 'ㅋ', 'X': 'ㅌ', 'C': 'ㅊ', 'V': 'ㅍ',
+        'B': 'ㅠ', 'N': 'ㅜ', 'M': 'ㅡ',
+        ' ': ' ',
+        '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8', '9': '9', '0': '0',
+    }
+    return combine_hangul_jamo(''.join(eng2hangul.get(char, char) for char in text))
 
 def consistsOfEquation(text: str) -> bool:
     for c in text:
@@ -296,6 +410,9 @@ async def on_message(msg):
                 await msg.channel.send(resultOfEquation)
         except:
             pass
+    
+    elif msg.content.replace(' ', '').isalnum():
+        await msg.channel.send(eng_to_hangul(msg.content))
 
 
 @bot.tree.command(name='기출', description='기출')
