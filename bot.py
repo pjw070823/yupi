@@ -411,8 +411,12 @@ async def on_message(msg):
         except:
             pass
     
-    elif msg.content.replace(' ', '').isalnum():
-        await msg.channel.send(eng_to_hangul(msg.content))
+    elif all(('a' <= c <= 'z') or ('A' <= c <= 'Z') or ('0' <= c <= '9') for c in msg.content.replace(' ', '')):
+        hangul = eng_to_hangul(msg.content)
+        completed = sum('가' <= c <= '힣' for c in hangul)
+        incomplete = sum(('ㄱ' <= c <= 'ㆎ') or ('ᄀ' <= c <= 'ᇿ') for c in hangul)
+        if completed > incomplete:
+            await msg.channel.send(hangul)
 
 
 @bot.tree.command(name='기출', description='기출')
