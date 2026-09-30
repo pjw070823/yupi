@@ -9,11 +9,13 @@ import json
 import os
 from dotenv import load_dotenv
 import sqlite3
+import reverse_twenty
 
 load_dotenv()
 
 MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash" or "google/gemma-2-27b-it"
 VISION_MODEL_NAME = "google/gemini-2.5-flash-lite:online"
+REVERSE_TWENTY_MODEL_NAME = MAIN_MODEL_NAME
 DISCORD_MESSAGE_LIMIT = 2000
 
 bot = commands.Bot(command_prefix='/', intents=Intents.all())
@@ -237,7 +239,10 @@ async def on_message(msg):
     if msg.author.bot:
         return
 
-    if msg.content.startswith('기출 '):
+    if msg.content.startswith('!') and reverse_twenty.get_game(msg.channel.id):
+        await handle_reverse_twenty_guess(msg)
+
+    elif msg.content.startswith('기출 '):
         qNum = msg.content[3:]
         if len(qNum) > 7:
             return
@@ -417,6 +422,64 @@ async def on_message(msg):
         incomplete = sum(('ㄱ' <= c <= 'ㆎ') or ('ᄀ' <= c <= 'ᇿ') for c in hangul)
         if completed > incomplete:
             await msg.channel.send(hangul)
+
+
+async def handle_reverse_twenty_guess(msg):
+    game = reverse_twenty.get_game(msg.channel.id)
+    word = msg.content[1:].strip()
+
+    async with msg.channel.typing():
+        try:
+            result, question = await reverse_twenty.ask_question(client, REVERSE_TWENTY_MODEL_NAME, game, word)
+        except Exception as exc:
+            await msg.reply(f"API 오류: {exc}")
+            return
+
+    # 여러 명이 동시에 제시하는 동안 다른 사람이 먼저 맞혔으면 이 답은 버린다
+    if reverse_twenty.get_game(msg.channel.id) is not game:
+        return
+
+    if result == 'correct':
+        reverse_twenty.end_game(msg.channel.id)
+        await msg.reply(f"정답! {msg.author.mention} 님이 맞혔어요. 정답은 **{game.answer}**였어요. ({game.attempts + 1}번째 제시어)")
+    elif result == 'invalid':
+        await msg.reply(reverse_twenty.INVALID_WORD_MESSAGE)
+    elif result == 'failed':
+        await msg.reply('이 단어로는 질문을 못 만들겠어요. 다른 단어를 제시해 주세요!')
+    else:
+        await msg.reply(question)
+
+
+reverse_group = app_commands.Group(name='리버스', description='리버스 게임')
+reverse_twenty_starting_channels = set()
+
+
+@reverse_group.command(name='스무고개', description='리버스 스무고개 게임을 시작합니다')
+async def reverse_twenty_start(interaction):
+    channel_id = interaction.channel_id
+    if reverse_twenty.get_game(channel_id) or channel_id in reverse_twenty_starting_channels:
+        await interaction.response.send_message('이미 이 채널에서 게임이 진행 중이에요! 그만하려면 /리버스 포기 를 입력하세요.')
+        return
+
+    reverse_twenty_starting_channels.add(channel_id)
+    try:
+        await interaction.response.defer()
+        await reverse_twenty.start_game(client, REVERSE_TWENTY_MODEL_NAME, channel_id, interaction.user.id)
+    finally:
+        reverse_twenty_starting_channels.discard(channel_id)
+    await interaction.followup.send('게임을 시작합니다! ![제시어]라고 보내 단어를 제시하세요.')
+
+
+@reverse_group.command(name='포기', description='진행 중인 리버스 스무고개를 끝내고 정답을 공개합니다')
+async def reverse_twenty_give_up(interaction):
+    game = reverse_twenty.end_game(interaction.channel_id)
+    if game is None:
+        await interaction.response.send_message('진행 중인 게임이 없어요. /리버스 스무고개 로 시작해 보세요!')
+        return
+    await interaction.response.send_message(f"게임 종료! 정답은 **{game.answer}**였어요. (제시한 단어 {game.attempts}개)")
+
+
+bot.tree.add_command(reverse_group)
 
 
 @bot.tree.command(name='기출', description='기출')
