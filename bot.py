@@ -15,7 +15,7 @@ load_dotenv()
 
 MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash" or "google/gemma-2-27b-it"
 VISION_MODEL_NAME = "google/gemini-2.5-flash-lite:online"
-REVERSE_TWENTY_MODEL_NAME = MAIN_MODEL_NAME
+REVERSE_TWENTY_MODEL_NAME = "deepseek/deepseek-v4.1-flash"
 DISCORD_MESSAGE_LIMIT = 2000
 
 bot = commands.Bot(command_prefix='/', intents=Intents.all())
