@@ -1,6 +1,6 @@
 from discord import app_commands
-from discord.ext import commands
-from discord import Intents
+from discord.ext import commands, tasks
+from discord import Intents, AllowedMentions, Object, Forbidden, NotFound
 from openrouter import OpenRouter
 from math import *
 import base64
@@ -9,7 +9,10 @@ import json
 import os
 from dotenv import load_dotenv
 import sqlite3
+import logging
+import time
 import reverse_twenty
+from reminders import ReminderStore, parse_reminder_time, MAX_MESSAGE_LENGTH
 
 load_dotenv()
 
@@ -22,6 +25,8 @@ bot = commands.Bot(command_prefix='/', intents=Intents.all())
 client = OpenRouter(api_key=os.getenv("OPENROUTER_API_KEY"))
 connection = sqlite3.connect('chattings.db')
 cursor = connection.cursor()
+reminder_store = ReminderStore(connection)
+logger = logging.getLogger(__name__)
 
 math1 = ['22예시10', '22예시13', '22예시15', '22예시20', '22예시21', '220609', '220610', '220612', '220613', '220615', '220621', '220910', '220912', '220913', '220915', '220921', '221109', '221111', '221113', '221115', '221121', '230610', '230612', '230613', '230615', '230621', '230909', '230911', '230913', '230915', '230921', '231109', '231111', '231113', '231115', '231121', '240609', '240612', '240613', '240615', '240621', '240909', '240912', '240914', '240920', '240921', '241109', '241111', '241113', '241115', '241121', '250610', '250612', '250614', '250620', '250622', '250910', '250912', '250914', '250920', '250922', '251110', '251112', '251114', '251120', '251122', '260610', '260612', '260614', '260620', '260622', '260910', '260912', '260914', '260920', '260922', '261110', '261112', '261114', '261120', '261122']
 math2 = ['22예시09', '22예시11', '22예시12', '22예시14', '22예시22', '220611', '220614', '220620', '220622', '220909', '220911', '220914', '220920', '220922', '221110', '221112', '221114', '221120', '221122', '230609', '230611', '230614', '230620', '230622', '230910', '230912', '230914', '230920', '230922', '231110', '231112', '231114', '231120', '231122', '240610', '240611', '240614', '240620', '240622', '240910', '240911', '240913', '240915', '240922', '241110', '241112', '241114', '241120', '241122', '250609', '250611', '250613', '250615', '250621', '250909', '250911', '250913', '250915', '250921', '251109', '251111', '251113', '251115', '251121', '260609', '260611', '260613', '260615', '260621', '260909', '260911', '260913', '260915', '260921', '261109', '261111', '261113', '261115', '261121']
@@ -226,12 +231,70 @@ def load_recent_history(user_id: int, limit: int = 2*10+1):
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
+    init_db()
+    reminder_store.init_db()
+    if not send_reminders.is_running():
+        send_reminders.start()
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s).')
     except Exception as e:
         print(f'Sync failed: {e}')
-    init_db()
+
+
+@tasks.loop(seconds=5)
+async def send_reminders():
+    await bot.wait_until_ready()
+    for reminder_id, user_id, channel_id, message in reminder_store.due(time.time()):
+        try:
+            channel = bot.get_channel(channel_id)
+            if channel is None:
+                channel = await bot.fetch_channel(channel_id)
+            await channel.send(
+                f"<@{user_id}> [리마인드]" + (f"\n**{message}**" if message else ""),
+                allowed_mentions=AllowedMentions(
+                    everyone=False, roles=False, users=[Object(id=user_id)], replied_user=False
+                ),
+            )
+        except (Forbidden, NotFound):
+            # Deleted channels and missing permissions cannot be fixed by retrying.
+            logger.exception("Reminder %s cannot be delivered to channel %s", reminder_id, channel_id)
+            reminder_store.finish(reminder_id, "failed")
+        except Exception:
+            logger.exception("Reminder %s failed; retrying in 60 seconds", reminder_id)
+            reminder_store.retry(reminder_id, time.time())
+        else:
+            reminder_store.finish(reminder_id)
+
+
+# Keep the worker alive through temporary SQLite locks/errors as well.
+send_reminders.add_exception_type(sqlite3.Error)
+
+
+@bot.tree.command(name='remind', description='지정한 시간에 이 채널에서 리마인드합니다')
+@app_commands.describe(시간='+2d 1h 30m 또는 261031 20:21 (한국 시간)', 메시지='리마인드할 메시지 (선택)')
+async def remind(interaction, 시간: str, 메시지: str = ''):
+    try:
+        target = parse_reminder_time(시간)
+        if len(메시지.strip()) > MAX_MESSAGE_LENGTH:
+            raise ValueError(f'메시지는 {MAX_MESSAGE_LENGTH}자 이하로 입력해 주세요.')
+        if interaction.channel_id is None:
+            raise ValueError('리마인드할 채널에서 명령을 입력해 주세요.')
+    except ValueError as exc:
+        await interaction.response.send_message(str(exc), ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    try:
+        reminder_store.add(interaction.user.id, interaction.channel_id, 메시지, target)
+    except sqlite3.Error:
+        logger.exception('Failed to save reminder')
+        await interaction.followup.send('예약을 저장하지 못했어요. 다시 시도해 주세요.', ephemeral=True)
+        return
+    await interaction.followup.send(
+        f'예약했어요! {target:%Y-%m-%d %H:%M} (한국 시간)에 이 채널에서 알려드릴게요.',
+        ephemeral=True,
+    )
 
 
 @bot.event

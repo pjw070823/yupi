@@ -2,3 +2,4 @@
 main.py
 original.py
 chattings.db
+__pycache__/
