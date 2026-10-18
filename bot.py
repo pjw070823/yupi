@@ -242,7 +242,7 @@ async def on_ready():
         print(f'Sync failed: {e}')
 
 
-@tasks.loop(seconds=5)
+@tasks.loop(seconds=1)
 async def send_reminders():
     await bot.wait_until_ready()
     for reminder_id, user_id, channel_id, message in reminder_store.due(time.time()):
@@ -272,7 +272,7 @@ send_reminders.add_exception_type(sqlite3.Error)
 
 
 @bot.tree.command(name='remind', description='지정한 시간에 이 채널에서 리마인드합니다')
-@app_commands.describe(시간='+2d 1h 30m 또는 261031 20:21 (한국 시간)', 메시지='리마인드할 메시지 (선택)')
+@app_commands.describe(시간='+2m 30s, +1:20(분:초), +2:10:00(시:분:초), 261031 20:21(한국 시간)', 메시지='리마인드할 메시지 (선택)')
 async def remind(interaction, 시간: str, 메시지: str = ''):
     try:
         target = parse_reminder_time(시간)
@@ -292,7 +292,7 @@ async def remind(interaction, 시간: str, 메시지: str = ''):
         await interaction.followup.send('예약을 저장하지 못했어요. 다시 시도해 주세요.', ephemeral=True)
         return
     await interaction.followup.send(
-        f'예약했어요! {target:%Y-%m-%d %H:%M} (한국 시간)에 이 채널에서 알려드릴게요.',
+        f'예약했어요! {target:%Y-%m-%d %H:%M:%S} (한국 시간)에 이 채널에서 알려드릴게요.',
         ephemeral=True,
     )
 

@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 
 KST = timezone(timedelta(hours=9), name="KST")
-TIME_HELP = '시간은 "+2d 1h 30m" 또는 "261031 20:21" 형식으로 입력해 주세요. (한국 시간)'
+TIME_HELP = '시간은 "+2d 1h 30m 10s", "+1:20"(분:초), "+2:10:00"(시:분:초) 또는 "261031 20:21"(한국 시간) 형식으로 입력해 주세요. 콜론 뒤 각 값은 00~59로 입력해 주세요.'
+UNIQUE_UNIT_HELP = "d, h, m, s는 각각 한 번만 입력해 주세요."
 MAX_MESSAGE_LENGTH = 1900
 
 
@@ -21,15 +22,24 @@ def parse_reminder_time(text: str, now: datetime | None = None) -> datetime:
     try:
         if text.startswith("+"):
             duration = text[1:].strip()
-            # Accept spaced or compact units, but reject missing/duplicate units
-            # and arbitrary text instead of silently ignoring it.
-            if not re.fullmatch(r"(?:[0-9]+[dhm]\s*)+", duration):
-                raise ValueError(TIME_HELP)
-            parts = re.findall(r"([0-9]+)([dhm])", duration)
-            if len({unit for _, unit in parts}) != len(parts):
-                raise ValueError("d, h, m은 각각 한 번만 입력해 주세요.")
-            seconds = sum(int(value) * {"d": 86400, "h": 3600, "m": 60}[unit]
-                          for value, unit in parts)
+            if ':' in duration:
+                # Two fields mean minutes:seconds; three mean hours:minutes:seconds.
+                match = re.fullmatch(r"([0-9]+):([0-5][0-9])(?::([0-5][0-9]))?", duration)
+                if not match:
+                    raise ValueError(TIME_HELP)
+                first, second, third = match.groups()
+                seconds = (int(first) * 60 + int(second) if third is None
+                           else int(first) * 3600 + int(second) * 60 + int(third))
+            else:
+                # Accept spaced or compact units, but reject missing/duplicate units
+                # and arbitrary text instead of silently ignoring it.
+                if not re.fullmatch(r"(?:[0-9]+[dhms]\s*)+", duration):
+                    raise ValueError(TIME_HELP)
+                parts = re.findall(r"([0-9]+)([dhms])", duration)
+                if len({unit for _, unit in parts}) != len(parts):
+                    raise ValueError(UNIQUE_UNIT_HELP)
+                seconds = sum(int(value) * {"d": 86400, "h": 3600, "m": 60, "s": 1}[unit]
+                              for value, unit in parts)
             target = now + timedelta(seconds=seconds)
         else:
             match = re.fullmatch(r"([0-9]{2})([0-9]{2})([0-9]{2})\s+([0-9]{2}):([0-9]{2})", text)
@@ -40,7 +50,7 @@ def parse_reminder_time(text: str, now: datetime | None = None) -> datetime:
     except OverflowError:
         raise ValueError("예약 가능한 시간 범위를 벗어났어요.") from None
     except ValueError as exc:
-        if str(exc) in (TIME_HELP, "d, h, m은 각각 한 번만 입력해 주세요."):
+        if str(exc) in (TIME_HELP, UNIQUE_UNIT_HELP):
             raise
         raise ValueError("날짜와 시간을 확인해 주세요. " + TIME_HELP) from None
 

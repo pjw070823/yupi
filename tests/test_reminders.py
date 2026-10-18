@@ -34,9 +34,30 @@ class TimeTests(unittest.TestCase):
 
     def test_invalid_and_past_times(self):
         for text in ('', '+', '+0m', '+-1h', '+1.5h', '+1h 2h', '+1h garbage',
-                     '+1', '+1s', '261031', '261031 24:00', '261031 20:60',
+                     '+1', '261031', '261031 24:00', '261031 20:60',
                      '261332 20:21', '270229 00:00', '261018 12:00',
                      '251031 20:21', '261031 20:21 extra', '+' + '9' * 100 + 'd'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                parse_reminder_time(text, self.now)
+
+    def test_seconds_and_colon_durations(self):
+        cases = {
+            '+2m 30s': 150, '+2m30s': 150, '+30s': 30, '+1s': 1,
+            '+1d 2h 3m 4s': 93784, '+0m 90s': 90,
+            '+1:20': 80, '+2:10:00': 7800, ' +01:20 ': 80,
+            '+0:01': 1, '+00:00:01': 1, '+120:00': 7200,
+            '+100:00:00': 360000,
+        }
+        for text, seconds in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(parse_reminder_time(text, self.now),
+                                 self.now + timedelta(seconds=seconds))
+
+    def test_invalid_seconds_and_colon_durations(self):
+        for text in ('+0s', '+0:00', '+00:00:00', '+1s 2s', '+1:60', '+1:00:60',
+                     '+1:60:00', '+1:2', '+1:2:03', '+1:02:3', '+1:', '+:20',
+                     '+1:20:00:00', '+1:20s', '+1h 1:20', '+-1:20', '+1.5s',
+                     '+1:20 garbage', '+1 :20', '+1:000', '+' + '9' * 100 + ':00'):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_reminder_time(text, self.now)
 
@@ -157,11 +178,14 @@ class DiscordTests(unittest.IsolatedAsyncioTestCase):
         interaction = SimpleNamespace(user=SimpleNamespace(id=42), channel_id=123,
                                       response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
                                       followup=SimpleNamespace(send=AsyncMock()))
-        await command.callback(interaction, '+2d 1h 30m', '회의 준비')
+        await command.callback(interaction, '+2m 30s', '회의 준비')
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
         interaction.followup.send.assert_awaited_once()
         self.assertEqual(self.connection.execute('SELECT user_id, channel_id, message FROM reminders').fetchone(),
                          (42, 123, '회의 준비'))
+        due_at = self.connection.execute('SELECT due_at FROM reminders').fetchone()[0]
+        self.assertIn(datetime.fromtimestamp(due_at, KST).strftime('%H:%M:%S'),
+                      interaction.followup.send.call_args.args[0])
 
     async def test_command_rejects_invalid_input_without_saving(self):
         for time_text, message in (('invalid', '알림'), ('+1m', 'a' * 1901)):
