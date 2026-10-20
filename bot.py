@@ -10,8 +10,12 @@ import os
 from dotenv import load_dotenv
 import sqlite3
 import logging
+import re
 import time
 import reverse_twenty
+import asyncio
+import jungol
+import discord
 from reminders import ReminderStore, parse_reminder_time, MAX_MESSAGE_LENGTH
 
 load_dotenv()
@@ -20,12 +24,16 @@ MAIN_MODEL_NAME = "deepseek/deepseek-v4-flash" or "google/gemma-2-27b-it"
 VISION_MODEL_NAME = "google/gemini-2.5-flash-lite:online"
 REVERSE_TWENTY_MODEL_NAME = "z-ai/glm-5.3-flash"
 DISCORD_MESSAGE_LIMIT = 2000
+JUNGOL_PROBLEM_LINK = re.compile(r'https://jungol\.co\.kr/problem/(\d+)')
 
 bot = commands.Bot(command_prefix='/', intents=Intents.all())
 client = OpenRouter(api_key=os.getenv("OPENROUTER_API_KEY"))
 connection = sqlite3.connect('chattings.db')
 cursor = connection.cursor()
 reminder_store = ReminderStore(connection)
+jungol_store = jungol.JungolStore(connection)
+jungol_cache = jungol.ProfileCache()
+jungol_session = None
 logger = logging.getLogger(__name__)
 
 math1 = ['22예시10', '22예시13', '22예시15', '22예시20', '22예시21', '220609', '220610', '220612', '220613', '220615', '220621', '220910', '220912', '220913', '220915', '220921', '221109', '221111', '221113', '221115', '221121', '230610', '230612', '230613', '230615', '230621', '230909', '230911', '230913', '230915', '230921', '231109', '231111', '231113', '231115', '231121', '240609', '240612', '240613', '240615', '240621', '240909', '240912', '240914', '240920', '240921', '241109', '241111', '241113', '241115', '241121', '250610', '250612', '250614', '250620', '250622', '250910', '250912', '250914', '250920', '250922', '251110', '251112', '251114', '251120', '251122', '260610', '260612', '260614', '260620', '260622', '260910', '260912', '260914', '260920', '260922', '261110', '261112', '261114', '261120', '261122']
@@ -233,6 +241,7 @@ async def on_ready():
     print('------')
     init_db()
     reminder_store.init_db()
+    jungol_store.init_db()
     if not send_reminders.is_running():
         send_reminders.start()
     try:
@@ -298,11 +307,32 @@ async def remind(interaction, 시간: str, 메시지: str = ''):
 
 
 @bot.event
+async def on_raw_message_edit(payload):
+    # Discord attaches the link embed after the message is sent, which arrives as an edit.
+    data = payload.data
+    if data.get('author', {}).get('bot') or not data.get('embeds'):
+        return
+    if not JUNGOL_PROBLEM_LINK.fullmatch(data.get('content', '').strip()):
+        return
+    channel = bot.get_channel(payload.channel_id)
+    if channel is None:
+        return
+    try:
+        await channel.get_partial_message(payload.message_id).edit(suppress=True)
+    except (Forbidden, NotFound):
+        logger.warning('Could not suppress embed for message %s', payload.message_id)
+
+
+@bot.event
 async def on_message(msg):
     if msg.author.bot:
         return
 
-    if msg.content.startswith('!') and reverse_twenty.get_game(msg.channel.id):
+    jungol_match = JUNGOL_PROBLEM_LINK.fullmatch(msg.content.strip())
+    if jungol_match:
+        await msg.channel.send(f'https://jungol.co.kr/og/problem/{jungol_match.group(1)}.png')
+
+    elif msg.content.startswith('!') and reverse_twenty.get_game(msg.channel.id):
         await handle_reverse_twenty_guess(msg)
 
     elif msg.content.startswith('기출 '):
@@ -511,6 +541,131 @@ async def handle_reverse_twenty_guess(msg):
         await msg.reply('이 단어로는 질문을 못 만들겠어요. 다른 단어를 제시해 주세요!')
     else:
         await msg.reply(question)
+
+
+jungol_group = app_commands.Group(name='jungol', description='정올 관련 기능', guild_only=True)
+
+
+def get_jungol_session():
+    global jungol_session
+    if jungol_session is None or jungol_session.closed:
+        jungol_session = jungol.new_session()
+    return jungol_session
+
+
+@jungol_group.command(name='register', description='이 서버의 정올 유저 목록에 등록합니다')
+@app_commands.describe(정올id='정올 숫자 ID 또는 닉네임(@닉네임)', 유저='등록할 디스코드 사용자')
+async def jungol_register(interaction, 정올id: str, 유저: discord.Member):
+    await interaction.response.defer()
+    try:
+        profile = await jungol.fetch_profile(get_jungol_session(), 정올id)
+        jungol_store.register(interaction.guild_id, 유저.id, profile.account_id)
+    except jungol.JungolError as exc:
+        await interaction.followup.send(str(exc), ephemeral=True)
+        return
+    except sqlite3.Error:
+        logger.exception('Failed to save jungol user')
+        await interaction.followup.send('등록을 저장하지 못했어요. 다시 시도해 주세요.', ephemeral=True)
+        return
+    jungol_cache.put(profile)
+    await interaction.followup.send(
+        f'{유저.mention} 님을 정올 @{profile.nickname} ({profile.tier}, AC 레이팅 {profile.rating}점)으로 등록했어요!',
+        allowed_mentions=AllowedMentions.none(),
+    )
+
+
+async def get_jungol_profile(account_id, semaphore):
+    profile = jungol_cache.get(account_id)
+    if profile is not None:
+        return profile
+    async with semaphore:
+        try:
+            profile = await jungol.fetch_profile(get_jungol_session(), str(account_id))
+        except jungol.JungolError:
+            return None
+    jungol_cache.put(profile)
+    return profile
+
+
+@jungol_group.command(name='rank', description='이 서버에 등록된 정올 유저의 AC 레이팅 순위표를 보여줍니다')
+async def jungol_rank(interaction):
+    members = jungol_store.members(interaction.guild_id)
+    if not members:
+        await interaction.response.send_message('등록된 유저가 없어요. /jungol register 로 등록해 보세요!')
+        return
+
+    await interaction.response.defer()
+    semaphore = asyncio.Semaphore(jungol.MAX_CONCURRENT_REQUESTS)
+    profiles = await asyncio.gather(*(get_jungol_profile(account_id, semaphore) for _, account_id in members))
+    ranked = sorted(((profile.rating, user_id, profile) for (user_id, _), profile in zip(members, profiles) if profile),
+                    key=lambda row: (-row[0], row[2].nickname.lower()))
+    failed = len(members) - len(ranked)
+
+    lines = []
+    place = 0
+    previous = None
+    for index, (rating, user_id, profile) in enumerate(ranked, start=1):
+        if rating != previous:
+            place, previous = index, rating
+        lines.append(f'**{place}.** <@{user_id}> · @{profile.nickname} ({profile.tier}) — **{rating}점**')
+    description = '\n'.join(lines)
+    if len(description) > 3900:
+        description = description[:3900].rsplit('\n', 1)[0] + '\n…'
+    footer = f'조회하지 못한 유저 {failed}명 제외 · ' if failed else ''
+    embed = discord.Embed(title='정올 AC 레이팅 순위', description=description or '조회에 성공한 유저가 없어요.')
+    embed.set_footer(text=footer + '5분마다 갱신')
+    await interaction.followup.send(embed=embed, allowed_mentions=AllowedMentions.none())
+
+
+@jungol_group.command(name='profile', description='등록된 정올 프로필을 보여줍니다 (기본은 본인)')
+@app_commands.describe(유저='프로필을 볼 디스코드 사용자 (생략하면 본인)')
+async def jungol_profile(interaction, 유저: discord.Member = None):
+    target = 유저 or interaction.user
+    account_id = jungol_store.account_id(interaction.guild_id, target.id)
+    if account_id is None:
+        who = '아직' if target.id == interaction.user.id else f'{target.display_name} 님은 아직'
+        await interaction.response.send_message(f'{who} 정올에 등록되지 않았어요. /jungol register 로 등록해 보세요!', ephemeral=True)
+        return
+
+    await interaction.response.defer()
+    try:
+        profile = await jungol.fetch_profile(get_jungol_session(), str(account_id))
+    except jungol.JungolError as exc:
+        await interaction.followup.send(str(exc), ephemeral=True)
+        return
+    jungol_cache.put(profile)
+
+    embed = discord.Embed(title=f'@{profile.nickname}', url=f'{jungol.BASE_URL}/account/{profile.account_id}')
+    embed.set_author(name=target.display_name, icon_url=target.display_avatar.url)
+    embed.add_field(name='티어', value=profile.tier or '-')
+    embed.add_field(name='AC 레이팅', value=f'{profile.rating}점')
+    embed.add_field(name='랭킹', value=f'{profile.rank:,}위' if profile.rank else '-')
+    if profile.next_tier_points is not None:
+        embed.add_field(name='다음 티어까지', value=f'{profile.next_tier_points}점')
+    if profile.joined:
+        embed.add_field(name='가입일', value=jungol.format_joined(profile.joined))
+    await interaction.followup.send(embed=embed)
+
+
+@jungol_group.command(name='problem', description='정올 문제 정보를 보여줍니다')
+@app_commands.describe(번호='정올 문제 번호')
+async def jungol_problem(interaction, 번호: app_commands.Range[int, 1, 99999999]):
+    await interaction.response.defer()
+    try:
+        problem = await jungol.fetch_problem(get_jungol_session(), 번호)
+    except jungol.JungolError as exc:
+        await interaction.followup.send(str(exc), ephemeral=True)
+        return
+    # The link lives in the embed title so Discord does not generate its own link embed.
+    embed = discord.Embed(title=f'{problem.number}번 {problem.title}', url=problem.url)
+    embed.add_field(name='티어', value=problem.tier or '-')
+    embed.add_field(name='해결한 사람', value=f'{problem.solved_users:,}명')
+    embed.add_field(name='제출', value=f'{problem.submissions:,}회')
+    embed.set_image(url=problem.image_url)
+    await interaction.followup.send(embed=embed)
+
+
+bot.tree.add_command(jungol_group)
 
 
 reverse_group = app_commands.Group(name='리버스', description='리버스 게임')
